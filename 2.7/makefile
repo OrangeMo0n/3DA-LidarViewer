@@ -25,14 +25,16 @@
 # same setting in Vrui's makefile. By default the directories match; if
 # the installation directory was adjusted during Vrui's installation, it
 # must be adjusted here as well.
-VRUIDIR = $(HOME)/Vrui-2.1
+#VRUIDIR = $(HOME)/Vrui-2.1
+VRUIDIR = /usr/local/packages/Vrui/2.1-001
 
 # Base installation directory for LiDAR Viewer and its configuration
 # file.If this is set to the default of $(PWD), LiDAR Viewer does not
 # have to be installed to be run. LiDAR Viewer's executables, and
 # configuration file will be installed in the bin and etc directories
 # underneath the given base directory, respectively.
-INSTALLDIR = $(shell pwd)
+#INSTALLDIR = $(shell pwd)
+INSTALLDIR = /usr/local/packages/LidarViewer/2.7
 
 ########################################################################
 # Nothing underneath here needs to be changed.
