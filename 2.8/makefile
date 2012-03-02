@@ -25,7 +25,8 @@
 # matches the default Vrui installation; if Vrui's installation
 # directory was changed during Vrui's installation, the directory below
 # must be adapted.
-VRUI_MAKEDIR := $(HOME)/Vrui-2.2/share/make
+#VRUI_MAKEDIR := $(HOME)/Vrui-2.2/share/make
+VRUI_MAKEDIR := /usr/local/packages/Vrui/2.2-003/share/make
 
 # Base installation directory for the example programs. If this is set
 # to the default of $(PWD), the example programs do not have to be
@@ -34,7 +35,8 @@ VRUI_MAKEDIR := $(HOME)/Vrui-2.2/share/make
 # directory, respectively.
 # Important note: Do not use ~ as an abbreviation for the user's home
 # directory here; use $(HOME) instead.
-INSTALLDIR := $(shell pwd)
+#INSTALLDIR := $(shell pwd)
+INSTALLDIR := /usr/local/packages/LidarViewer/2.8
 
 ########################################################################
 # Everything below here should not have to be changed
