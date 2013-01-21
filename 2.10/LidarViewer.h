@@ -1,0 +1,279 @@
+/***********************************************************************
+LidarViewer - Viewer program for multiresolution LiDAR data.
+Copyright (c) 2005-2012 Oliver Kreylos
+
+This file is part of the LiDAR processing and analysis package.
+
+The LiDAR processing and analysis package is free software; you can
+redistribute it and/or modify it under the terms of the GNU General
+Public License as published by the Free Software Foundation; either
+version 2 of the License, or (at your option) any later version.
+
+The LiDAR processing and analysis package is distributed in the hope
+that it will be useful, but WITHOUT ANY WARRANTY; without even the
+implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with the LiDAR processing and analysis package; if not, write to the
+Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+02111-1307 USA
+***********************************************************************/
+
+#ifndef LIDARVIEWER_INCLUDED
+#define LIDARVIEWER_INCLUDED
+
+#include <vector>
+#include <Misc/CallbackData.h>
+#include <IO/Directory.h>
+#include <Geometry/Plane.h>
+#include <GL/gl.h>
+#include <GL/GLColor.h>
+#include <GL/GLObject.h>
+#include <GLMotif/RadioBox.h>
+#include <GLMotif/ToggleButton.h>
+#include <GLMotif/TextFieldSlider.h>
+#include <GLMotif/FileSelectionDialog.h>
+#include <SceneGraph/TransformNode.h>
+#include <Vrui/LocatorTool.h>
+#include <Vrui/LocatorToolAdapter.h>
+#include <Vrui/DraggingTool.h>
+#include <Vrui/SurfaceNavigationTool.h>
+#include <Vrui/Vrui.h>
+#include <Vrui/Application.h>
+
+#include "LidarTypes.h"
+#include "PointBasedLightingShader.h"
+
+/* Forward declarations: */
+namespace Cluster {
+class MulticastPipe;
+}
+namespace GLMotif {
+class Popup;
+class PopupMenu;
+class PopupWindow;
+}
+namespace Vrui {
+class InputDevice;
+class Lightsource;
+class AffineCoordinateTransform;
+}
+
+class LidarOctree;
+class LidarTool;
+class ProfileTool;
+class Primitive;
+
+class LidarViewer:public Vrui::Application,public GLObject
+	{
+	/* Embedded classes: */
+	public:
+	typedef Geometry::Plane<double,3> GPlane;
+	
+	class Locator:public Vrui::LocatorToolAdapter // Base class for application locators
+		{
+		/* Elements: */
+		protected:
+		LidarViewer* application; // Pointer to the application object
+		
+		/* Constructors and destructors: */
+		Locator(Vrui::LocatorTool* sTool,LidarViewer* sApplication)
+			:LocatorToolAdapter(sTool),
+			 application(sApplication)
+			{
+			};
+		public:
+		virtual ~Locator(void)
+			{
+			};
+		
+		/* Methods: */
+		virtual void updateSettings(void)
+			{
+			};
+		virtual void glRenderAction(GLContextData& contextData) const
+			{
+			};
+		};
+	
+	class SelectorLocator:public Locator // Class for point selection locators
+		{
+		friend class LidarViewer;
+		
+		/* Embedded classes: */
+		public:
+		enum SelectorMode // Enumerated type for selection modes
+			{
+			ADD,SUBTRACT
+			};
+		
+		/* Elements: */
+		private:
+		Vrui::Scalar influenceRadius; // Radius of selector's influence in physical coordinates
+		SelectorMode selectorMode; // Selection mode of this locator
+		Vrui::NavTrackerState locatorTransform; // Current transformation of the locator
+		Point modelCenter; // Locator's position in model coordinates
+		Scalar modelRadius; // Locator's influence radius in model coordinates
+		bool ready; // Glag if the selector has been properly initialized (modelCenter and modelRadius are valid)
+		bool active; // Flag whether the selector is active (selecting points)
+		
+		/* Constructors and destructors: */
+		public:
+		SelectorLocator(Vrui::LocatorTool* sTool,LidarViewer* sApplication,Misc::ConfigurationFileSection* cfg =0);
+		virtual ~SelectorLocator(void);
+		
+		/* Methods from Vrui::LocatorToolAdapter: */
+		virtual void storeState(Misc::ConfigurationFileSection& configFileSection) const;
+		virtual void getName(std::string& name) const;
+		virtual void motionCallback(Vrui::LocatorTool::MotionCallbackData* cbData);
+		virtual void buttonPressCallback(Vrui::LocatorTool::ButtonPressCallbackData* cbData);
+		virtual void buttonReleaseCallback(Vrui::LocatorTool::ButtonReleaseCallbackData* cbData);
+		
+		/* New methods: */
+		virtual void updateSettings();
+		virtual void glRenderAction(GLContextData& contextData) const;
+		};
+	
+	private:
+	typedef std::vector<Locator*> LocatorList;
+	typedef std::vector<Primitive*> PrimitiveList;
+	
+	struct DataItem:public GLObject::DataItem
+		{
+		/* Elements: */
+		public:
+		GLuint influenceSphereDisplayListId; // ID of display list to render transparent spheres
+		GLuint planeColorMapTextureId; // Texture object ID of texture plane color map
+		PointBasedLightingShader pbls; // Shader for point-based lighting
+		
+		/* Constructors and destructors: */
+		DataItem(GLContextData& contextData);
+		virtual ~DataItem(void);
+		};
+	
+	friend class SelectorLocator;
+	friend class LidarTool;
+	friend class ProfileTool;
+	
+	/* Elements: */
+	unsigned int memCacheSize; // Memory cache size for the LiDAR data representation in MB
+	std::vector<std::string> lidarFileNames; // Array of file names from with the octrees were loaded
+	int numOctrees; // Number of LiDAR octrees rendered in parallel
+	LidarOctree** octrees; // Array of LiDAR data representations rendered in parallel
+	bool* showOctrees; // Array of flags to disable individual LiDAR data representations
+	double offsets[3]; // Coordinate offsets that need to be added to points stored in the octree(s) to reconstruct original point positions
+	Vrui::AffineCoordinateTransform* coordTransform; // Pointer to a coordinate transformation to undo point offsets and handle vertical exaggeration
+	Scalar renderQuality; // The current rendering quality (adapted to achieve optimal frame rate)
+	Scalar fncWeight; // Weight factor for focus+context LOD adjustment
+	float pointSize; // The pixel size used to render LiDAR points
+	bool pointBasedLighting; // Flag whether points are rendered with illumination
+	bool usePointColors; // Flag whether to use points' colors during illuminated rendering
+	bool enableSun; // Flag whether to use a sun light source instead of all viewer's headlights
+	bool* viewerHeadlightStates; // Enable states of all viewers' headlights at the last time the sun light source was turned on
+	Vrui::Scalar sunAzimuth,sunElevation; // Azimuth and elevation angles of sun light source in degrees
+	Vrui::Lightsource* sun; // Light source representing the sun
+	bool useTexturePlane; // Flag whether to use automatically generated texture coordinates to visualize point distance from a plane
+	GPlane texturePlane; // Plane equation of the texture-generating plane
+	double texturePlaneScale; // Scale factor for texture plane distances
+	double planeDistanceExaggeration; // Exaggeration factor for distances orthogonal to the texture plane
+	bool updateTree; // Flag if the tree is continuously updated
+	double lastFrameTime; // Application time of last frame; used to calculate render performance
+	
+	/* Interaction state: */
+	bool overrideTools; // Flag whether interaction settings changes influence existing tools
+	Vrui::Scalar brushSize; // Default physical-coordinate size for new interaction brushes
+	GLColor<GLfloat,4> brushColor; // Color to render selection brush, with transparency
+	SelectorLocator::SelectorMode defaultSelectorMode; // Selection mode for new selector locators
+	Scalar neighborhoodSize; // Size of neighborhood for point classification
+	LocatorList locators; // List of currently existing locators
+	Cluster::MulticastPipe* extractorPipe; // Pipe to synchronize feature extraction on a distributed rendering cluster
+	GLColor<GLfloat,4> primitiveColor; // Color to render primitives, with transparency
+	GLColor<GLfloat,4> selectedPrimitiveColor; // Color to render selected primitives, with transparency
+	PrimitiveList primitives; // List of extracted primitives
+	int lastPickedPrimitive; // Index of the most recently picked primitive
+	std::vector<bool> primitiveSelectedFlags; // List of selected flags for extracted primitives
+	
+	/* Vrui state: */
+	GLMotif::PopupMenu* mainMenu; // The program's main menu
+	GLMotif::RadioBox* mainMenuSelectorModes;
+	GLMotif::PopupWindow* octreeDialog; // The dialog to select individual octrees
+	GLMotif::PopupWindow* renderDialog; // The rendering settings dialog
+	GLMotif::PopupWindow* interactionDialog; // The interaction settings dialog
+	GLMotif::RadioBox* interactionDialogSelectorModes;
+	SceneGraph::TransformNodePointer sceneGraphRoot; // Common root node for additional scene graphs
+	IO::DirectoryPtr dataDirectory; // Last directory from/to which selections or primitives were loaded/saved
+	
+	/* Private methods: */
+	GLMotif::Popup* createSelectorModesMenu(void);
+	GLMotif::Popup* createSelectionMenu(void);
+	GLMotif::Popup* createExtractionMenu(void);
+	GLMotif::Popup* createDialogMenu(void);
+	GLMotif::PopupMenu* createMainMenu(void);
+	GLMotif::PopupWindow* createOctreeDialog(void);
+	GLMotif::PopupWindow* createRenderDialog(void);
+	GLMotif::PopupWindow* createInteractionDialog(void);
+	static void treeUpdateNotificationCB(void* userData)
+		{
+		Vrui::requestUpdate();
+		};
+	void draggingToolCallback(Vrui::DraggingTool::DragStartCallbackData* cbData); // Callback for selection events from dragging tools
+	int addPrimitive(Primitive* newPrimitive); // Adds a primitive to the list; returns the index of the newly added primitive
+	void selectPrimitive(int primitiveIndex); // Selects the given primitive
+	void deselectPrimitive(int primitiveIndex); // Deselects the given primitive
+	void deletePrimitive(int primitiveIndex); // Deletes the given primitive from the list
+	void updateSun(void); // Updates the state of the sun light source
+	void setEnableSun(bool newEnableSun); // Enables or disables the sun light source
+	
+	/* Constructors and destructors: */
+	public:
+	LidarViewer(int& argc,char**& argv,char**& appDefaults);
+	virtual ~LidarViewer(void);
+	
+	/* Methods: */
+	virtual void initContext(GLContextData& contextData) const;
+	virtual void toolCreationCallback(Vrui::ToolManager::ToolCreationCallbackData* cbData);
+	virtual void toolDestructionCallback(Vrui::ToolManager::ToolDestructionCallbackData* cbData);
+	virtual void frame(void);
+	virtual void display(GLContextData& contextData) const;
+	void alignSurfaceFrame(Vrui::SurfaceNavigationTool::AlignmentData& alignmentData);
+	void centerDisplayCallback(Misc::CallbackData* cbData);
+	void changeSelectorModeCallback(GLMotif::RadioBox::ValueChangedCallbackData* cbData);
+	void classifySelectionCallback(Misc::CallbackData* cbData);
+	void saveSelectionCallback(Misc::CallbackData* cbData);
+	void saveSelectionOKCallback(GLMotif::FileSelectionDialog::OKCallbackData* cbData);
+	void clearSelectionCallback(Misc::CallbackData* cbData);
+	void extractPlaneCallback(Misc::CallbackData* cbData);
+	void extractBruntonCallback(Misc::CallbackData* cbData);
+	void extractLineCallback(Misc::CallbackData* cbData);
+	void extractSphereCallback(Misc::CallbackData* cbData);
+	void extractCylinderCallback(Misc::CallbackData* cbData);
+	void intersectPrimitivesCallback(Misc::CallbackData* cbData);
+	void loadPrimitivesCallback(Misc::CallbackData* cbData);
+	void loadPrimitivesOKCallback(GLMotif::FileSelectionDialog::OKCallbackData* cbData);
+	void savePrimitivesCallback(Misc::CallbackData* cbData);
+	void savePrimitivesOKCallback(GLMotif::FileSelectionDialog::OKCallbackData* cbData);
+	void deleteSelectedPrimitivesCallback(Misc::CallbackData* cbData);
+	void clearPrimitivesCallback(Misc::CallbackData* cbData);
+	void showOctreeDialogCallback(Misc::CallbackData* cbData);
+	void octreeSelectionCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData,const int& octreeIndex);
+	void showRenderDialogCallback(Misc::CallbackData* cbData);
+	void renderQualitySliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void fncWeightSliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void pointSizeSliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void enableLightingCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void usePointColorsCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void enableSunCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void sunAzimuthSliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void sunElevationSliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void enableTexturePlaneCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void texturePlaneScaleSliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void distanceExaggerationSliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void showInteractionDialogCallback(Misc::CallbackData* cbData);
+	void overrideToolsCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void brushSizeSliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void neighborhoodSizeSliderCallback(GLMotif::TextFieldSlider::ValueChangedCallbackData* cbData);
+	void updateTreeCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	};
+
+#endif
